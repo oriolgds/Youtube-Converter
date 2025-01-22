@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Youtube Downloader</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Youtube Downloader</h1>
+    <form id="downloadForm">
+        <label for="url">URL del Video:</label><br>
+        <input type="text" id="url" name="url" required><br><br>
+
+        <label for="type">Tipo de Descarga:</label><br>
+        <select id="type" name="type">
+            <option value="audio">Audio</option>
+            <option value="video">Video</option>
+        </select><br><br>
+
+        <label for="quality">Calidad del Video:</label><br>
+        <select id="quality" name="quality">
+            <option value="best">Mejor Calidad</option>
+            <option value="720p">720p</option>
+            <option value="480p">480p</option>
+            <option value="360p">360p</option>
+        </select><br><br>
+
+        <button type="submit">Descargar</button>
+    </form>
+
+    <h2>Progreso:</h2>
+    <div id="progress">Esperando progreso...</div>
+
+    <script>
+        const socket = io("http://127.0.0.1:5000");
+
+        socket.on("progress", (data) => {
+            document.getElementById("progress").innerText = `
+                Progreso: ${data.progress},
+                Velocidad: ${data.speed},
+                ETA: ${data.eta || 'N/A'} segundos
+            `;
+        });
+
+        document.getElementById("downloadForm").addEventListener("submit", (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+
+            fetch("http://127.0.0.1:5000/convert", {
+                method: "POST",
+                body: formData,
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.download_url) {
+                        document.getElementById("progress").innerText += `
+                            \nDescarga completada.
+                            <a href="${data.download_url}" target="_blank">Descargar archivo</a>
+                        `;
+                    } else {
+                        document.getElementById("progress").innerText = `Error: ${data.error}`;
+                    }
+                })
+                .catch(err => {
+                    document.getElementById("progress").innerText = `Error: ${err.message}`;
+                });
+        });
+    </script>
+</body>
+</html>
