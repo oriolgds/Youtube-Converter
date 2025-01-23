@@ -1,87 +1,102 @@
-from flask import Flask, request, jsonify, send_from_directory, render_template
-from flask_socketio import SocketIO, emit
-import yt_dlp
 import os
+import json
 import uuid
+from flask import Flask, request, jsonify, render_template
+from yt_dlp import YoutubeDL
+
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")  # Configuración para WebSockets
 
-# Configuración de carpetas
-app.config["TEMPLATES_FOLDER"] = "templates"
 DOWNLOAD_FOLDER = "downloads"
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+PROGRESS_FILE = "progress.json"
 
-def progress_hook(d):
-    """Función de progreso para informar el estado de la descarga."""
-    if d['status'] == 'downloading':
-        progress = d.get('_percent_str', '0%').strip()
-        speed = d.get('_speed_str', '0 KB/s').strip()
-        eta = d.get('eta', 0)
-        socketio.emit('progress', {
-            'progress': progress,
-            'speed': speed,
-            'eta': eta
-        })
-    elif d['status'] == 'finished':
-        socketio.emit('progress', {'progress': '100%', 'message': 'Descarga completada'})
+# Asegúrate de que la carpeta de descargas exista
+if not os.path.exists(DOWNLOAD_FOLDER):
+    os.makedirs(DOWNLOAD_FOLDER)
+
+# Cargar el progreso desde el archivo JSON
+def load_progress():
+    if os.path.exists(PROGRESS_FILE):
+        with open(PROGRESS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+# Guardar el progreso en el archivo JSON
+def save_progress(progress):
+    with open(PROGRESS_FILE, "w") as f:
+        json.dump(progress, f, indent=4)
+
+# Actualizar el progreso de una tarea
+def update_progress(task_id, status, progress, download_url=None):
+    progress_data = load_progress()
+    progress_data[task_id] = {
+        "status": status,
+        "progress": progress,
+        "download_url": download_url
+    }
+    save_progress(progress_data)
 
 @app.route('/')
 def index():
-    """Ruta para servir la página HTML."""
     return render_template('index.html')
 
+@app.route('/download/<task_id>', methods=['GET'])
+def download(task_id):
+    progress_data = load_progress()
+    if task_id in progress_data:
+        download_url = progress_data[task_id].get("download_url")
+        if download_url:
+            return jsonify({"download_url": download_url})
+    return jsonify({"error": "Task not found or not finished yet."}), 404
+
 @app.route('/convert', methods=['POST'])
-def convert_video():
-    try:
-        # Obtener parámetros del formulario
-        video_url = request.form.get("url")
-        download_type = request.form.get("type", "audio")
-        quality = request.form.get("quality", "best")
+def convert():
+    url = request.form.get("url")
+    download_type = request.form.get("download_type")
+    quality = request.form.get("quality", "best")
 
-        if not video_url:
-            return jsonify({"error": "La URL del video es requerida"}), 400
+    if not url or not download_type:
+        return jsonify({"error": "URL and download type are required."}), 400
 
-        unique_filename = f"{uuid.uuid4()}"
-        output_path = os.path.join(DOWNLOAD_FOLDER, unique_filename)
+    task_id = str(uuid.uuid4())
+    update_progress(task_id, "pending", "0%")
 
-        if download_type == "audio":
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': f"{output_path}.mp3",
-                'progress_hooks': [progress_hook],
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-            }
-        elif download_type == "video":
-            ydl_opts = {
-                'format': quality,
-                'outtmpl': f"{output_path}.mp4",
-                'progress_hooks': [progress_hook],
-            }
+    # Configurar opciones de descarga
+    options = {
+        "outtmpl": os.path.join(DOWNLOAD_FOLDER, f"{task_id}.%(ext)s"),
+        "progress_hooks": [lambda d: handle_progress(task_id, d)],
+    }
+
+    if download_type == "audio":
+        options["format"] = "bestaudio/best"
+        options["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }]
+    elif download_type == "video":
+        if quality == "best":
+            options["format"] = "bestvideo+bestaudio/best"
         else:
-            return jsonify({"error": "El tipo de descarga debe ser 'audio' o 'video'"}), 400
+            options["format"] = f"bestvideo[height<={quality}]+bestaudio/best"
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
+    try:
+        with YoutubeDL(options) as ydl:
+            ydl.download([url])
 
-        extension = "mp3" if download_type == "audio" else "mp4"
-        download_url = f"http://127.0.0.1:5000/downloads/{unique_filename}.{extension}"
-
-        return jsonify({
-            "message": "Descarga exitosa",
-            "download_url": download_url
-        })
+        # Archivo combinado listo
+        download_url = f"/download/{task_id}.mp4"
+        update_progress(task_id, "finished", "100%", download_url)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        update_progress(task_id, "error", str(e))
 
-@app.route('/downloads/<filename>', methods=['GET'])
-def download_file(filename):
-    return send_from_directory(DOWNLOAD_FOLDER, filename)
+    return jsonify({"task_id": task_id})
+
+def handle_progress(task_id, data):
+    if data["status"] == "downloading":
+        percent = float(data["downloaded_bytes"]) / float(data["total_bytes"]) * 100
+        update_progress(task_id, "converting", f"{int(percent)}%")
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, port=5000)
+    app.run(debug=True, port=5000)

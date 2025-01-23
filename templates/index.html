@@ -3,70 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Youtube Downloader</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <title>Youtube Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .progress {
+            margin-top: 10px;
+        }
+        .download-link {
+            margin-top: 10px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Youtube Downloader</h1>
-    <form id="downloadForm">
-        <label for="url">URL del Video:</label><br>
-        <input type="text" id="url" name="url" required><br><br>
+    <div class="container">
+        <h1>Youtube Converter</h1>
+        <form id="convert-form">
+            <label for="url">URL del Video:</label><br>
+            <input type="text" id="url" name="url" required style="width: 100%;"><br><br>
 
-        <label for="type">Tipo de Descarga:</label><br>
-        <select id="type" name="type">
-            <option value="audio">Audio</option>
-            <option value="video">Video</option>
-        </select><br><br>
+            <label for="type">Tipo:</label><br>
+            <select id="type" name="type" required>
+                <option value="audio">Audio</option>
+                <option value="video">Video</option>
+            </select><br><br>
 
-        <label for="quality">Calidad del Video:</label><br>
-        <select id="quality" name="quality">
-            <option value="best">Mejor Calidad</option>
-            <option value="720p">720p</option>
-            <option value="480p">480p</option>
-            <option value="360p">360p</option>
-        </select><br><br>
+            <label for="quality">Calidad (solo para video):</label><br>
+            <select id="quality" name="quality">
+                <option value="best">Mejor</option>
+                <option value="720p">720p</option>
+                <option value="480p">480p</option>
+                <option value="360p">360p</option>
+            </select><br><br>
 
-        <button type="submit">Descargar</button>
-    </form>
+            <button type="submit">Convertir</button>
+        </form>
 
-    <h2>Progreso:</h2>
-    <div id="progress">Esperando progreso...</div>
+        <div class="progress" id="progress"></div>
+        <div class="download-link" id="download-link"></div>
+    </div>
 
     <script>
-        const socket = io("http://127.0.0.1:5000");
+        const form = document.getElementById("convert-form");
+        const progressDiv = document.getElementById("progress");
+        const downloadLinkDiv = document.getElementById("download-link");
 
-        socket.on("progress", (data) => {
-            document.getElementById("progress").innerText = `
-                Progreso: ${data.progress},
-                Velocidad: ${data.speed},
-                ETA: ${data.eta || 'N/A'} segundos
-            `;
-        });
-
-        document.getElementById("downloadForm").addEventListener("submit", (e) => {
+        form.addEventListener("submit", async (e) => {
             e.preventDefault();
 
-            const formData = new FormData(e.target);
+            // Limpiar mensajes previos
+            progressDiv.textContent = "Iniciando descarga...";
+            downloadLinkDiv.innerHTML = "";
 
-            fetch("http://127.0.0.1:5000/convert", {
-                method: "POST",
-                body: formData,
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.download_url) {
-                        document.getElementById("progress").innerText += `
-                            \nDescarga completada.
-                            <a href="${data.download_url}" target="_blank">Descargar archivo</a>
-                        `;
-                    } else {
-                        document.getElementById("progress").innerText = `Error: ${data.error}`;
-                    }
-                })
-                .catch(err => {
-                    document.getElementById("progress").innerText = `Error: ${err.message}`;
+            // Obtener datos del formulario
+            const formData = new FormData(form);
+            const url = formData.get("url");
+            const type = formData.get("type");
+            const quality = formData.get("quality");
+
+            try {
+                // Enviar solicitud al backend para iniciar la conversión
+                const response = await fetch("/convert", {
+                    method: "POST",
+                    body: formData,
                 });
+
+                if (!response.ok) {
+                    throw new Error("Error al iniciar la conversión.");
+                }
+
+                const data = await response.json();
+                const taskId = data.task_id;
+
+                // Iniciar el seguimiento del progreso
+                trackProgress(taskId);
+            } catch (error) {
+                progressDiv.textContent = `Error: ${error.message}`;
+            }
         });
+
+        async function trackProgress(taskId) {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/status/${taskId}`);
+                    if (!response.ok) {
+                        throw new Error("Error al obtener el estado.");
+                    }
+
+                    const statusData = await response.json();
+
+                    // Actualizar el progreso en la interfaz
+                    if (statusData.status === "pending") {
+                        progressDiv.textContent = "En cola...";
+                    } else if (statusData.status === "converting") {
+                        progressDiv.textContent = `Descargando: ${statusData.progress}`;
+                    } else if (statusData.status === "finished") {
+                        clearInterval(interval);
+                        progressDiv.textContent = "¡Descarga completa!";
+                        downloadLinkDiv.innerHTML = `
+                            <a href="${statusData.download_url}" download>Descargar archivo</a>
+                        `;
+                    } else if (statusData.status === "error") {
+                        clearInterval(interval);
+                        progressDiv.textContent = `Error: ${statusData.download_url}`;
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    progressDiv.textContent = `Error: ${error.message}`;
+                }
+            }, 2000);
+        }
     </script>
 </body>
 </html>
