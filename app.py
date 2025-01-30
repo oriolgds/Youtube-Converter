@@ -4,6 +4,7 @@ import json
 import uuid
 from yt_dlp import YoutubeDL
 import threading
+import shutil
 
 app = Flask(__name__)
 DOWNLOAD_FOLDER = "downloads"
@@ -38,15 +39,18 @@ def handle_progress(task_id, d):
 import shutil  # Importar shutil para mover archivos
 
 
+import shutil
+
 def download_and_convert(url, download_type, quality, task_id):
     try:
         update_progress(task_id, "pending", "0%")
         output_file = os.path.join(DOWNLOAD_FOLDER, f"{task_id}.%(ext)s")
 
+        # Define yt-dlp options
         ydl_opts = {
             "outtmpl": output_file,
             "progress_hooks": [lambda d: handle_progress(task_id, d)],
-            "keepvideo": True  # Evita que yt-dlp elimine los archivos originales
+            "merge_output_format": "mp4",  # Ensures audio and video are merged
         }
 
         if download_type == "audio":
@@ -59,36 +63,36 @@ def download_and_convert(url, download_type, quality, task_id):
                 }]
             })
             final_ext = "mp3"
+
         elif download_type == "video":
-            ydl_opts[
-                "format"] = f"bestvideo[height<={quality}]+bestaudio/best" if quality != "best" else "bestvideo+bestaudio/best"
+            ydl_opts.update({
+                "format": "bv*[ext=mp4]+ba[ext=m4a]/b",  # Ensures proper audio & video merge
+                "postprocessors": [{
+                    "key": "FFmpegVideoConvertor",
+                    "preferedformat": "mp4"
+                }]
+            })
             final_ext = "mp4"
 
+        # Start download
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # Buscar el archivo descargado
+        # Find the final output file
+        final_filename = None
         downloaded_files = [f for f in os.listdir(DOWNLOAD_FOLDER) if f.startswith(task_id)]
-        if downloaded_files:
-            for file in downloaded_files:
-                if file.endswith(final_ext):  # Verifica si ya es el formato final
-                    final_filename = file
-                    break
-            else:
-                # Si no se encontró, intenta renombrarlo
-                for file in downloaded_files:
-                    if file.endswith(".webm") or file.endswith(".m4a") or file.endswith(".mp4"):
-                        final_filename = f"{task_id}.{final_ext}"
-                        shutil.move(os.path.join(DOWNLOAD_FOLDER, file), os.path.join(DOWNLOAD_FOLDER, final_filename))
-                        break
-        else:
-            raise Exception("No se encontró el archivo convertido")
+        for file in downloaded_files:
+            if file.endswith(final_ext):
+                final_filename = file
+                break
+
+        if not final_filename:
+            raise Exception("No merged file found")
 
         update_progress(task_id, "finished", "100%", f"/download/{final_filename}")
 
     except Exception as e:
         update_progress(task_id, "error", str(e))
-
 
 @app.route("/")
 def index():

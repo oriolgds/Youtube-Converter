@@ -3,34 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Youtube Converter</title>
+    <title>YouTube Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <h1>Convertir Video de YouTube</h1>
-    <form id="convertForm" method="POST" action="/convert">
-        <label for="url">URL del video:</label>
-        <input type="text" id="url" name="url" required><br><br>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">YouTube Video Converter</h1>
 
-        <label for="download_type">Tipo de descarga:</label>
-        <select id="download_type" name="download_type" required>
-            <option value="audio">Solo audio</option>
-            <option value="video">Video</option>
-        </select><br><br>
+        <!-- Form -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <form id="convertForm" method="POST" action="/convert">
+                <div class="mb-4">
+                    <label for="url" class="block text-gray-700 font-medium mb-2">Video URL:</label>
+                    <input type="text" id="url" name="url" required class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
 
-        <label for="quality">Calidad del video:</label>
-        <select id="quality" name="quality">
-            <option value="best">Mejor calidad</option>
-            <option value="360">360p</option>
-            <option value="480">480p</option>
-            <option value="720">720p</option>
-        </select><br><br>
+                <div class="mb-4">
+                    <label for="download_type" class="block text-gray-700 font-medium mb-2">Download Type:</label>
+                    <select id="download_type" name="download_type" required class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="audio">Audio Only</option>
+                        <option value="video">Video</option>
+                    </select>
+                </div>
 
-        <button type="submit">Convertir</button>
-    </form>
+                <div id="qualityContainer" class="mb-4">
+                    <label for="quality" class="block text-gray-700 font-medium mb-2">Video Quality:</label>
+                    <select id="quality" name="quality" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="best">Best Quality</option>
+                        <option value="360">360p</option>
+                        <option value="480">480p</option>
+                        <option value="720">720p</option>
+                    </select>
+                </div>
 
-    <div id="status"></div>
+                <button type="submit" class="w-full bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition duration-200">Convert</button>
+            </form>
+        </div>
+
+        <!-- Status Modal -->
+        <div id="statusModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div class="bg-white p-6 rounded-lg shadow-lg w-11/12 max-w-md">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Conversion Status</h2>
+                <div id="status" class="text-gray-700"></div>
+                <button id="closeModal" class="mt-4 w-full bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition duration-200">Close</button>
+            </div>
+        </div>
+    </div>
 
     <script>
+        // Function to toggle video quality select visibility
+        function toggleQualitySelect() {
+            const downloadType = document.getElementById("download_type").value;
+            const qualityContainer = document.getElementById("qualityContainer");
+
+            if (downloadType === "audio") {
+                qualityContainer.classList.add("hidden");
+            } else {
+                qualityContainer.classList.remove("hidden");
+            }
+        }
+
+        // Initial call to set the correct state
+        toggleQualitySelect();
+
+        // Add event listener to download type select
+        document.getElementById("download_type").addEventListener("change", toggleQualitySelect);
+
+        // Form submission logic
         document.getElementById("convertForm").addEventListener("submit", function(event) {
             event.preventDefault();
 
@@ -42,6 +81,9 @@
             formData.append("url", url);
             formData.append("download_type", downloadType);
             formData.append("quality", quality);
+
+            // Show modal
+            document.getElementById("statusModal").classList.remove("hidden");
 
             fetch("/convert", {
                 method: "POST",
@@ -57,6 +99,7 @@
             });
         });
 
+        // Function to check conversion status
         function checkStatus(taskId) {
             const statusInterval = setInterval(() => {
                 fetch(`/status/${taskId}`)
@@ -64,13 +107,18 @@
                     .then(data => {
                         if (data.status === "finished") {
                             clearInterval(statusInterval);
-                            document.getElementById("status").innerHTML = `Video listo para descargar: <a href="${data.download_url}">Descargar</a>`;
+                            document.getElementById("status").innerHTML = `Video ready for download: <a href="${data.download_url}" class="text-blue-500 underline">Download</a>`;
                         } else {
-                            document.getElementById("status").innerText = `Progreso: ${data.progress}`;
+                            document.getElementById("status").innerText = `Progress: ${data.progress}`;
                         }
                     });
             }, 2000);
         }
+
+        // Close modal
+        document.getElementById("closeModal").addEventListener("click", function() {
+            document.getElementById("statusModal").classList.add("hidden");
+        });
     </script>
 </body>
 </html>
