@@ -4,119 +4,71 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Youtube Converter</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        .container {
-            max-width: 500px;
-            margin: 0 auto;
-        }
-        .progress {
-            margin-top: 10px;
-        }
-        .download-link {
-            margin-top: 10px;
-        }
-    </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Youtube Converter</h1>
-        <form id="convert-form">
-            <label for="url">URL del Video:</label><br>
-            <input type="text" id="url" name="url" required style="width: 100%;"><br><br>
+    <h1>Convertir Video de YouTube</h1>
+    <form id="convertForm" method="POST" action="/convert">
+        <label for="url">URL del video:</label>
+        <input type="text" id="url" name="url" required><br><br>
 
-            <label for="type">Tipo:</label><br>
-            <select id="type" name="type" required>
-                <option value="audio">Audio</option>
-                <option value="video">Video</option>
-            </select><br><br>
+        <label for="download_type">Tipo de descarga:</label>
+        <select id="download_type" name="download_type" required>
+            <option value="audio">Solo audio</option>
+            <option value="video">Video</option>
+        </select><br><br>
 
-            <label for="quality">Calidad (solo para video):</label><br>
-            <select id="quality" name="quality">
-                <option value="best">Mejor</option>
-                <option value="720p">720p</option>
-                <option value="480p">480p</option>
-                <option value="360p">360p</option>
-            </select><br><br>
+        <label for="quality">Calidad del video:</label>
+        <select id="quality" name="quality">
+            <option value="best">Mejor calidad</option>
+            <option value="360">360p</option>
+            <option value="480">480p</option>
+            <option value="720">720p</option>
+        </select><br><br>
 
-            <button type="submit">Convertir</button>
-        </form>
+        <button type="submit">Convertir</button>
+    </form>
 
-        <div class="progress" id="progress"></div>
-        <div class="download-link" id="download-link"></div>
-    </div>
+    <div id="status"></div>
 
     <script>
-        const form = document.getElementById("convert-form");
-        const progressDiv = document.getElementById("progress");
-        const downloadLinkDiv = document.getElementById("download-link");
+        document.getElementById("convertForm").addEventListener("submit", function(event) {
+            event.preventDefault();
 
-        form.addEventListener("submit", async (e) => {
-            e.preventDefault();
+            const url = document.getElementById("url").value;
+            const downloadType = document.getElementById("download_type").value;
+            const quality = document.getElementById("quality").value;
 
-            // Limpiar mensajes previos
-            progressDiv.textContent = "Iniciando descarga...";
-            downloadLinkDiv.innerHTML = "";
+            const formData = new FormData();
+            formData.append("url", url);
+            formData.append("download_type", downloadType);
+            formData.append("quality", quality);
 
-            // Obtener datos del formulario
-            const formData = new FormData(form);
-            const url = formData.get("url");
-            const type = formData.get("type");
-            const quality = formData.get("quality");
-
-            try {
-                // Enviar solicitud al backend para iniciar la conversión
-                const response = await fetch("/convert", {
-                    method: "POST",
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    throw new Error("Error al iniciar la conversión.");
+            fetch("/convert", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.task_id) {
+                    checkStatus(data.task_id);
+                } else {
+                    document.getElementById("status").innerText = "Error: " + data.error;
                 }
-
-                const data = await response.json();
-                const taskId = data.task_id;
-
-                // Iniciar el seguimiento del progreso
-                trackProgress(taskId);
-            } catch (error) {
-                progressDiv.textContent = `Error: ${error.message}`;
-            }
+            });
         });
 
-        async function trackProgress(taskId) {
-            const interval = setInterval(async () => {
-                try {
-                    const response = await fetch(`/status/${taskId}`);
-                    if (!response.ok) {
-                        throw new Error("Error al obtener el estado.");
-                    }
-
-                    const statusData = await response.json();
-
-                    // Actualizar el progreso en la interfaz
-                    if (statusData.status === "pending") {
-                        progressDiv.textContent = "En cola...";
-                    } else if (statusData.status === "converting") {
-                        progressDiv.textContent = `Descargando: ${statusData.progress}`;
-                    } else if (statusData.status === "finished") {
-                        clearInterval(interval);
-                        progressDiv.textContent = "¡Descarga completa!";
-                        downloadLinkDiv.innerHTML = `
-                            <a href="${statusData.download_url}" download>Descargar archivo</a>
-                        `;
-                    } else if (statusData.status === "error") {
-                        clearInterval(interval);
-                        progressDiv.textContent = `Error: ${statusData.download_url}`;
-                    }
-                } catch (error) {
-                    clearInterval(interval);
-                    progressDiv.textContent = `Error: ${error.message}`;
-                }
+        function checkStatus(taskId) {
+            const statusInterval = setInterval(() => {
+                fetch(`/status/${taskId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === "finished") {
+                            clearInterval(statusInterval);
+                            document.getElementById("status").innerHTML = `Video listo para descargar: <a href="${data.download_url}">Descargar</a>`;
+                        } else {
+                            document.getElementById("status").innerText = `Progreso: ${data.progress}`;
+                        }
+                    });
             }, 2000);
         }
     </script>
