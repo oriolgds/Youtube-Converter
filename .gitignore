@@ -4,3 +4,4 @@
 /downloads
 conversion_status.json
 progress.json
+/__pycache__
