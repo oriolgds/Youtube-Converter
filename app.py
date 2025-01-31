@@ -53,7 +53,10 @@ def download_and_convert(url, download_type, quality, task_id):
             "merge_output_format": "mp4",  # Ensures audio and video are merged
         }
         ydl_opts.update({
-            "cookies": "cookies.txt"
+            "cookies": "cookies.txt",
+            "cookiefile": "cookies.txt",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "referer": "https://www.youtube.com/",
         })
 
         if download_type == "audio":
