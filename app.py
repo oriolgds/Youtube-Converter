@@ -52,6 +52,9 @@ def download_and_convert(url, download_type, quality, task_id):
             "progress_hooks": [lambda d: handle_progress(task_id, d)],
             "merge_output_format": "mp4",  # Ensures audio and video are merged
         }
+        ydl_opts.update({
+            "cookies": "cookies.txt"
+        })
 
         if download_type == "audio":
             ydl_opts.update({
