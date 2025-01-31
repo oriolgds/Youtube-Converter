@@ -57,6 +57,7 @@ def download_and_convert(url, download_type, quality, task_id):
             "cookiefile": "cookies.txt",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "referer": "https://www.youtube.com/",
+            "extractor-args": "youtube:player_client=android",
         })
 
         if download_type == "audio":
